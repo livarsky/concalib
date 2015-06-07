@@ -35,6 +35,22 @@ class HelpfulOptionParser(OptionParser):
         self.print_help(sys.stderr)
         self.exit(2, "\n%s: error: %s\n" % (self.get_prog_name(), msg))
 
+def get_pbinom(t, n, p, logV, lowerV):
+    f = robjects.r['pbinom']
+    #print (t, lowerV)
+    t = t - 1 if t > 0 and not lowerV else t
+    #print (t, lowerV)
+    return tuple(f(t, n, p, log=logV, lower=lowerV))[0]
+
+def checkpos(f, r):
+    if f < 3 or r < 3:
+        return False
+    #p_val = get_pbinom(min(f,r), f+r, 0.5, True, True)
+    a = max(f, r) * 1.0 / min(f, r)
+    if a > 10: #math.sqrt(max(f,r)) > min(f,r):
+        #print (f, r, (f+r), p_val)
+        return False
+    return True
 
 def get_annotate_qgram(genome, genome_annotate, q):
     """Compute for each q-gram in the genome its (composed) strand bias table. 
@@ -62,25 +78,39 @@ def get_annotate_qgram(genome, genome_annotate, q):
             continue
         else:
             l += 1
-
-        qgram_effect_last = [genome_annotate[0][i + q], genome_annotate[1][i + q], genome_annotate[2][i + q], genome_annotate[3][i + q]]
+        #(fm, rm, fmm, rmm)
+        if qgram == "CGCTGATC":
+            print ((i+q-1), genome_annotate[0][i + q-1], genome_annotate[1][i + q-1], genome_annotate[2][i + q-1], genome_annotate[3][i + q-1])
+        if reverse_complement(qgram) == "CGCTGATC":
+            print ((i), genome_annotate[0][i], genome_annotate[1][i], genome_annotate[2][i], genome_annotate[3][i])
         
-        #q-grams on forward direction, analyse therefore their last positions
-        qgram_last[qgram] = _add_listelements(qgram_last[qgram], qgram_effect_last) if qgram_last.has_key(qgram) else qgram_effect_last
-        
+        if checkpos(genome_annotate[0][i + q - 1] + genome_annotate[2][i + q - 1], genome_annotate[1][i + q - 1] + genome_annotate[3][i + q - 1]):        
+            qgram_effect_last = [genome_annotate[0][i + q - 1], genome_annotate[1][i + q-1], genome_annotate[2][i + q-1], genome_annotate[3][i + q-1]]
+            #q-grams on forward direction, analyse therefore their last positions
+            qgram_last[qgram] = _add_listelements(qgram_last[qgram], qgram_effect_last) if qgram_last.has_key(qgram) else qgram_effect_last
         #q-gram on reverse strand, analyse therefore their first positions. Furthermore, switch read direction
-        qgram_effect_first = [genome_annotate[1][i], genome_annotate[0][i], genome_annotate[3][i], genome_annotate[2][i]]
-        qgram_first[qgram] = _add_listelements(qgram_first[qgram], qgram_effect_first) if qgram_first.has_key(qgram) else qgram_effect_first
-        
+        if checkpos(genome_annotate[1][i] + genome_annotate[3][i], genome_annotate[0][i] + genome_annotate[2][i]):        
+            qgram_effect_first = [genome_annotate[1][i], genome_annotate[0][i], genome_annotate[3][i], genome_annotate[2][i]]
+            qgram_first[qgram] = _add_listelements(qgram_first[qgram], qgram_effect_first) if qgram_first.has_key(qgram) else qgram_effect_first
+            #if reverse_complement(qgram) == "AATGTCCG":
+            #    print ((i+q), genome_annotate[1][i + q], genome_annotate[0][i + q], genome_annotate[3][i + q], genome_annotate[2][i + q])
+    
     #combine the q-grams on the forward and reverse strand
     qgram_annotate = {}
     for qgram in qgram_last:
         qgram_annotate[qgram] = qgram_last[qgram]
         qgram_rev = reverse_complement(qgram)
+        if qgram == "CGCTGATC":
+            print (qgram_annotate[qgram])
         if qgram_rev in qgram_first:
             result = qgram_annotate[qgram][:]
+            if qgram_rev == "CGCTGATC":
+                print (qgram_first[qgram_rev])
             result = _add_listelements(result, qgram_first[qgram_rev])
             qgram_annotate[qgram] = result
+            if qgram == "CGCTGATC":
+                print (qgram_annotate[qgram])
+    print (qgram_annotate["CGCTGATC"])
     print("Warning: %s q-grams of %s contain other letters than A,C,G and T, ignore these q-grams" %(k, l) ,file=sys.stderr)
     return qgram_annotate
 
@@ -133,7 +163,7 @@ def get_genome(ref_path, learn_chrom):
         parser.error("Sorry, the Chromosome that is using for training (%s) is not contained \
         in the reference genome (%s)! Please use -c option!" %(learn_chrom, ref_path))
     
-    return seq, learn_chrom
+    return seq.upper(), learn_chrom
 
 
 def get_annotate_genome(genome, bampath, learn_chrom):
@@ -187,7 +217,9 @@ def get_annotate_genome(genome, bampath, learn_chrom):
 #			    	print (read.seq)
 #				print (read.cigar)
 #				print (genome[pos], read.seq[i + current_pos_read + bias])
-                            if read.seq[i + current_pos_read + bias] == genome[pos]:
+                            if genome[pos] == 'N':
+                                continue
+                            if read.seq[i + current_pos_read + bias].upper() == genome[pos].upper():
                                 rm[pos] += 1
                             else:
                                 rmm[pos] += 1
@@ -204,7 +236,9 @@ def get_annotate_genome(genome, bampath, learn_chrom):
 #			    	print (read.seq)
 #				print (read.cigar)
 #				print (genome[pos], read.seq[i + current_pos_read + bias])
-                            if read.seq[i + current_pos_read + bias] == genome[pos]:
+                            if genome[pos] == 'N':
+                                continue
+                            if read.seq[i + current_pos_read + bias].upper() == genome[pos].upper():
                                 fm[pos] += 1
                             else:
                                 fmm[pos] += 1
@@ -376,8 +410,8 @@ if __name__ == '__main__':
     parser = HelpfulOptionParser(usage=__doc__)
     
     parser.add_option("-a", dest="alpha", default=0.05, type="float", help="FWER (family-wise error rate) alpha, default: 0.05")
-    parser.add_option("-e", dest="epsilon", default=0.03, type="float", help="background error rate cutoff epsilon, default: 0.03")
-    parser.add_option("-d", dest="delta", default=0.05, type="float", help="error rate difference cutoff delta, default: 0.05")
+    parser.add_option("-e", dest="epsilon", default=0.1, type="float", help="background error rate cutoff epsilon, default: 0.03")
+    parser.add_option("-d", dest="delta", default=0.005, type="float", help="error rate difference cutoff delta, default: 0.05")
     parser.add_option("-c", dest="learn_chrom", default="chr1", help="chromosome that is used to derive Context Specific Errors, default: chr1")
     parser.add_option("-v", dest="version", default=False, action="store_true", help="show script's version")
     

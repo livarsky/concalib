@@ -14,7 +14,8 @@ def readGramsWithValues(filename):
             fm = int(row[4])
             fmm = int(row[5])
             fer = 1.0 * fmm / occur #row[6]
-            d[(qgram, phred)] = (occur, fm, fmm, fer)
+            if occur > 10000:
+                d[(qgram, phred)] = (occur, fm, fmm, fer)
             lines += 1
 #           print (qgram, values)
     print ("lines read from arg1:", lines)
@@ -34,7 +35,10 @@ def reverse_complement(s, rev=True):
 
 def float2symbolic(phred, fer):
 	newPhred = int(round(-10.0 * math.log(fer, 10), 0)) if fer != 0 else phred
-	return newPhred
+	if newPhred > phred:
+           return newPhred
+       else:
+           return phred
 
 def replace(s, ch, index):
     tmp = list(s)
